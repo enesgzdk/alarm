@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WakeUp OS | Kontrol Paneli</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="bg-[#0b0f19] text-gray-100 min-h-screen flex items-center justify-center p-4">
+
+  <div class="w-full max-w-md bg-[#161f30] border border-gray-800 rounded-3xl p-6 shadow-2xl space-y-6">
+    
+    <!-- Üst Başlık & Pil Durumu -->
+    <div class="flex justify-between items-center pb-4 border-b border-gray-800">
+      <div>
+        <h1 class="text-xl font-bold tracking-tight text-white">WakeUp System</h1>
+        <p class="text-xs text-gray-400">ESP32 Akıllı Titreşimli Uyandırıcı</p>
+      </div>
+      
+      <!-- Batarya Göstergesi -->
+      <div class="flex items-center space-x-2 bg-gray-900/60 px-3 py-1.5 rounded-full border border-gray-700">
+        <span id="chargeIcon" class="hidden text-amber-400 text-xs font-bold">⚡</span>
+        <span id="batteryText" class="text-xs font-semibold text-emerald-400">--%</span>
+        <div class="w-6 h-3 border border-gray-400 rounded-sm p-0.5 flex items-center">
+          <div id="batteryBar" class="h-full bg-emerald-400 rounded-2xs" style="width: 50%;"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alarm Aktiflik ve Saat Ayarı -->
+    <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 space-y-4">
+      <div class="flex justify-between items-center">
+        <span class="text-sm font-medium text-gray-300">Alarm Durumu</span>
+        <label class="relative inline-flex items-center cursor-pointer">
+          <input type="checkbox" id="alarmToggle" class="sr-only peer">
+          <div class="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+        </label>
+      </div>
+
+      <div class="flex justify-center items-center space-x-3 py-2">
+        <input type="number" id="inputHour" min="0" max="23" class="w-16 h-14 bg-gray-800 border border-gray-700 text-center text-3xl font-mono rounded-xl focus:outline-none focus:border-indigo-500" value="07">
+        <span class="text-3xl font-mono font-bold text-gray-500">:</span>
+        <input type="number" id="inputMinute" min="0" max="59" class="w-16 h-14 bg-gray-800 border border-gray-700 text-center text-3xl font-mono rounded-xl focus:outline-none focus:border-indigo-500" value="30">
+      </div>
+
+      <button onclick="saveAlarmSettings()" class="w-full py-3 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] transition font-semibold rounded-xl text-sm">
+        Alarm Saatini Güncelle
+      </button>
+    </div>
+
+    <!-- Dürtme ve Manuel Tetikleme (Kız Arkadaşın İçin) -->
+    <div class="bg-gradient-to-r from-rose-950/30 to-purple-950/30 border border-rose-900/30 rounded-2xl p-5 text-center space-y-3">
+      <div class="text-left">
+        <h3 class="text-sm font-semibold text-rose-300">Anlık Uyandırma / Dürt</h3>
+        <p class="text-xs text-rose-400/80">Dokunduğun anda göğsüne 3 saniyelik sert titreşim ve flaş gönderir.</p>
+      </div>
+      <button onclick="triggerNudge()" class="w-full py-3.5 bg-rose-600 hover:bg-rose-500 active:scale-[0.98] transition font-bold rounded-xl text-white shadow-lg shadow-rose-900/40">
+        💥 Şimdi Dürt (Titret)
+      </button>
+    </div>
+
+    <!-- Salondaki NFC Kapatma Alanı -->
+    <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 space-y-3">
+      <h3 class="text-sm font-semibold text-gray-300">Susturma (NFC Doğrulama)</h3>
+      <p class="text-xs text-gray-400">Salondaki karta okutulduğunda şifreyi girip kapatabilirsin.</p>
+      <div class="flex space-x-2">
+        <input type="password" id="stopPassword" placeholder="Susturma şifresi..." class="flex-1 bg-gray-800 border border-gray-700 px-4 py-2.5 rounded-xl text-sm focus:outline-none focus:border-rose-500">
+        <button onclick="stopAlarmSystem()" class="px-5 py-2.5 bg-red-600 hover:bg-red-500 font-semibold rounded-xl text-sm transition">
+          Sustur
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Supabase Bağlantı Bilgilerin
+    const SUPABASE_URL = "https://yygdawhsdhffrzssxogn.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Z2Rhd2hzZGhmZnJ6c3N4b2duIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1NDc3NjgsImV4cCI6MjEwOTEyMzc2OH0.cBWYfR_6BzxoI5Vo8kH45vpo-YPu3yRxRIlwv_wsvgA";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    // Durumu Veritabanından Yükle
+    async function loadState() {
+      const { data, error } = await supabase.from('alarm_state').select('*').eq('id', 1).single();
+      if (data) {
+        document.getElementById('inputHour').value = String(data.alarm_hour).padStart(2, '0');
+        document.getElementById('inputMinute').value = String(data.alarm_minute).padStart(2, '0');
+        document.getElementById('alarmToggle').checked = data.alarm_enabled;
+        
+        // Batarya göstergesi
+        document.getElementById('batteryText').innerText = `%${data.battery_level}`;
+        document.getElementById('batteryBar').style.width = `${data.battery_level}%`;
+        
+        if (data.is_charging) {
+          document.getElementById('chargeIcon').classList.remove('hidden');
+        } else {
+          document.getElementById('chargeIcon').classList.add('hidden');
+        }
+      }
+    }
+
+    // Alarm Ayarlarını Kaydet
+    async function saveAlarmSettings() {
+      const h = parseInt(document.getElementById('inputHour').value);
+      const m = parseInt(document.getElementById('inputMinute').value);
+      const enabled = document.getElementById('alarmToggle').checked;
+
+      await supabase.from('alarm_state').update({
+        alarm_hour: h,
+        alarm_minute: m,
+        alarm_enabled: enabled
+      }).eq('id', 1);
+
+      alert("Alarm başarıyla güncellendi!");
+    }
+
+    // Dürtme Gönder
+    async function triggerNudge() {
+      await supabase.from('alarm_state').update({ vibrate_now: true }).eq('id', 1);
+      alert("Titreşim sinyali gönderildi!");
+    }
+
+    // Alarmı Sustur (Şifreli Doğrulama)
+    async function stopAlarmSystem() {
+      const pwd = document.getElementById('stopPassword').value;
+      if (pwd === "1234") { // Belirlediğin basit şifre
+        await supabase.from('alarm_state').update({ alarm_enabled: false }).eq('id', 1);
+        alert("Alarm durduruldu!");
+      } else {
+        alert("Hatalı şifre!");
+      }
+    }
+
+    // Sayfa açıldığında verileri çek ve her 15 saniyede bir güncelle
+    loadState();
+    setInterval(loadState, 15000);
+  </script>
+</body>
+</html>
