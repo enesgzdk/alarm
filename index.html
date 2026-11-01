@@ -9,6 +9,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <style>
     input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
+    input[type="time"]:disabled::-webkit-calendar-picker-indicator { opacity: 0.3; cursor: not-allowed; }
   </style>
 </head>
 <body class="bg-[#0b0f19] text-gray-100 min-h-screen flex items-center justify-center p-4 relative overflow-x-hidden">
@@ -49,10 +50,15 @@
       </div>
 
       <div class="flex justify-center py-1">
-        <input type="time" id="timePicker" class="bg-gray-800/80 border border-gray-700 text-center text-4xl font-mono font-bold text-white rounded-2xl px-6 py-3 tracking-widest focus:outline-none focus:border-indigo-500 shadow-inner">
+        <input type="time" id="timePicker" class="bg-gray-800/80 border border-gray-700 text-center text-4xl font-mono font-bold text-white rounded-2xl px-6 py-3 tracking-widest focus:outline-none focus:border-indigo-500 shadow-inner transition disabled:opacity-40 disabled:cursor-not-allowed">
       </div>
 
-      <button type="button" onclick="saveAlarmTime()" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] transition font-semibold rounded-xl text-sm shadow-md shadow-indigo-950/40">
+      <!-- Kalan Süre / Kilit Durumu Notu -->
+      <p id="lockWarningText" class="text-center text-xs text-amber-400/90 font-medium hidden">
+        ⚠️ Alarma 10 dakikadan az kaldığı için değişiklik kilitlendi.
+      </p>
+
+      <button id="btnSaveAlarm" type="button" onclick="saveAlarmTime()" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] transition font-semibold rounded-xl text-sm shadow-md shadow-indigo-950/40 disabled:opacity-50 disabled:bg-gray-700 disabled:cursor-not-allowed disabled:pointer-events-none">
         Alarm Saatini Kur / Güncelle
       </button>
     </div>
@@ -80,6 +86,10 @@
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Z2Rhd2hzZGhmZnJ6c3N4b2duIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1NDc3NjgsImV4cCI6MjEwOTEyMzc2OH0.cBWYfR_6BzxoI5Vo8kH45vpo-YPu3yRxRIlwv_wsvgA";
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+    let activeAlarmHour = null;
+    let activeAlarmMinute = null;
+    let isAlarmActive = false;
+
     function showToast(message, type = 'success') {
       const container = document.getElementById('toastContainer');
       const toast = document.createElement('div');
@@ -91,12 +101,48 @@
       requestAnimationFrame(() => toast.classList.remove('-translate-y-4', 'opacity-0'));
       setTimeout(() => {
         toast.classList.add('opacity-0', '-translate-y-2');
-        setTimeout(() => toast.remove(), 300);
+        setTimeout(() => toast.remove(), 3000);
       }, 3000);
     }
 
     function bufferToBase64(buffer) {
       return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    }
+
+    // Alarma kalan dakikayı hesaplar (0 - 1440 dk arası)
+    function getMinutesUntilAlarm(targetHour, targetMinute) {
+      const now = new Date();
+      const currentMinutes = now.getHours() * 60 + now.getMinutes();
+      let targetMinutes = targetHour * 60 + targetMinute;
+
+      // Eğer alarm saati bugünkü saatten küçükse yarın sabah çalacaktır
+      if (targetMinutes < currentMinutes) {
+        targetMinutes += 24 * 60;
+      }
+      return targetMinutes - currentMinutes;
+    }
+
+    // 10 dakika kontrolü ve UI kilitleme
+    function evaluateLockState() {
+      if (activeAlarmHour === null || !isAlarmActive) return;
+
+      const minutesLeft = getMinutesUntilAlarm(activeAlarmHour, activeAlarmMinute);
+      const timeInput = document.getElementById('timePicker');
+      const saveBtn = document.getElementById('btnSaveAlarm');
+      const lockWarning = document.getElementById('lockWarningText');
+
+      // Alarm aktif ve çalmasına 10 dakika veya daha az kalmışsa (veya tam o an çalıyorsa)
+      if (minutesLeft <= 10 && minutesLeft >= 0) {
+        timeInput.disabled = true;
+        saveBtn.disabled = true;
+        saveBtn.innerText = "🔒 Alarma 10 Dk'dan Az Kaldı (Kilitli)";
+        lockWarning.classList.remove('hidden');
+      } else {
+        timeInput.disabled = false;
+        saveBtn.disabled = false;
+        saveBtn.innerText = "Alarm Saatini Kur / Güncelle";
+        lockWarning.classList.add('hidden');
+      }
     }
 
     async function registerEnesDevice() {
@@ -153,12 +199,21 @@
     async function loadState() {
       const { data } = await supabaseClient.from('alarm_state').select('*').eq('id', 1).single();
       if (data) {
-        const h = String(data.alarm_hour).padStart(2, '0');
-        const m = String(data.alarm_minute).padStart(2, '0');
-        document.getElementById('timePicker').value = `${h}:${m}`;
+        activeAlarmHour = data.alarm_hour;
+        activeAlarmMinute = data.alarm_minute;
+        isAlarmActive = data.alarm_enabled;
+
+        const h = String(activeAlarmHour).padStart(2, '0');
+        const m = String(activeAlarmMinute).padStart(2, '0');
+        
+        // Eğer input kilitli değilse veritabanındaki saati yansıt
+        const timeInput = document.getElementById('timePicker');
+        if (!timeInput.disabled) {
+          timeInput.value = `${h}:${m}`;
+        }
         
         const badge = document.getElementById('alarmStatusBadge');
-        if (data.alarm_enabled) {
+        if (isAlarmActive) {
           badge.className = "text-xs font-semibold px-2.5 py-1 rounded-full bg-emerald-950 text-emerald-400 border border-emerald-800/40";
           badge.innerText = "Aktif";
         } else {
@@ -181,10 +236,22 @@
         } else {
           document.getElementById('chargeIcon').classList.add('hidden');
         }
+
+        evaluateLockState();
       }
     }
 
     async function saveAlarmTime() {
+      // Çift Güvenlik Kontrolü: 10 dakika altındaysa isteği direkt kes
+      if (isAlarmActive && activeAlarmHour !== null) {
+        const remaining = getMinutesUntilAlarm(activeAlarmHour, activeAlarmMinute);
+        if (remaining <= 10 && remaining >= 0) {
+          showToast("Alarma 10 dakikadan az kaldığı için saat değiştirilemez!", "error");
+          evaluateLockState();
+          return;
+        }
+      }
+
       const timeVal = document.getElementById('timePicker').value;
       if (!timeVal) return showToast("Geçerli bir saat seçiniz.", "error");
 
@@ -207,6 +274,7 @@
       checkEnesAuth();
       loadState();
       setInterval(loadState, 10000);
+      setInterval(evaluateLockState, 5000); // Kilit durumunu yerel olarak 5 saniyede bir kontrol et
     });
   </script>
 </body>
