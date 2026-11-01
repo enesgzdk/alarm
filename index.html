@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WakeUp OS | Ana Panel</title>
+  <title>WakeUp OS | Enes Kontrol Paneli</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏰</text></svg>">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
@@ -11,8 +11,9 @@
     input[type="time"]::-webkit-calendar-picker-indicator { filter: invert(1); cursor: pointer; }
   </style>
 </head>
-<body class="bg-[#0b0f19] text-gray-100 min-h-screen flex items-center justify-center p-4 relative">
+<body class="bg-[#0b0f19] text-gray-100 min-h-screen flex items-center justify-center p-4 relative overflow-x-hidden">
 
+  <!-- Toast Bildirim Alanı -->
   <div id="toastContainer" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex flex-col space-y-2 pointer-events-none w-full max-w-xs px-4"></div>
 
   <div class="w-full max-w-md bg-[#161f30] border border-gray-800 rounded-3xl p-6 shadow-2xl space-y-6">
@@ -37,7 +38,7 @@
     <div id="ringingBanner" class="hidden bg-rose-950/60 border border-rose-600/60 rounded-2xl p-4 text-center space-y-2 animate-pulse">
       <div class="text-2xl">🚨</div>
       <h3 class="text-sm font-bold text-rose-300">ALARM ÇALIYOR!</h3>
-      <p class="text-xs text-rose-200">Susturmak için salondaki NFC etiketine gidip Face ID okutmanız gerekiyor.</p>
+      <p class="text-xs text-rose-200">Susturmak için salondaki NFC noktasına gidip Face ID okutmanız gerekiyor.</p>
     </div>
 
     <!-- Alarm Saati Kurulumu -->
@@ -56,18 +57,18 @@
       </button>
     </div>
 
-    <!-- Face ID Kurulum & Tanımlama Merkezi -->
+    <!-- Biyometrik Cihaz Tanımlama -->
     <div class="bg-gray-900/30 border border-gray-800/80 rounded-2xl p-4 space-y-3">
-      <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider">Biyometrik Kurulum Merkezi</h4>
+      <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider">Cihaz Doğrulama Durumu</h4>
       
       <div class="space-y-2">
-        <button type="button" onclick="registerUser('enes')" class="w-full py-2.5 bg-gray-800 hover:bg-gray-700 font-semibold rounded-xl text-xs text-gray-200 flex items-center justify-center space-x-2 transition">
+        <button id="btnEnesRegister" type="button" onclick="registerEnesDevice()" class="w-full py-2.5 bg-gray-800 hover:bg-gray-700 font-semibold rounded-xl text-xs text-gray-200 flex items-center justify-center space-x-2 transition">
           <span>👤</span>
-          <span id="enesBioLabel">Kendi Face ID'ni Eşle (Enes)</span>
+          <span id="enesBioLabel">Bu Cihazı Enes Olarak Supabase'e Eşle</span>
         </button>
 
         <a href="ceyda.html" class="block w-full text-center py-2.5 bg-rose-950/40 hover:bg-rose-900/40 border border-rose-800/30 font-semibold rounded-xl text-xs text-rose-300 transition">
-          👑 Ceyda Yönetim Paneline Geç
+          👑 Ceyda Root Paneline Geç
         </a>
       </div>
     </div>
@@ -84,16 +85,23 @@
       const toast = document.createElement('div');
       const isSuccess = type === 'success';
       const bg = isSuccess ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200' : 'bg-rose-950/90 border-rose-500/50 text-rose-200';
-      toast.className = `flex items-center space-x-3 px-4 py-3 rounded-2xl border backdrop-blur-md shadow-xl text-xs font-medium ${bg}`;
-      toast.innerHTML = `<span>${isSuccess ? '✓' : '✕'}</span><span>${message}</span>`;
+      toast.className = `flex items-center space-x-3 px-4 py-3 rounded-2xl border backdrop-blur-md shadow-xl text-xs font-medium transition-all duration-300 transform -translate-y-4 opacity-0 pointer-events-auto ${bg}`;
+      toast.innerHTML = `<span class="font-bold text-sm">${isSuccess ? '✓' : '✕'}</span><span>${message}</span>`;
       container.appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
+      requestAnimationFrame(() => toast.classList.remove('-translate-y-4', 'opacity-0'));
+      setTimeout(() => {
+        toast.classList.add('opacity-0', '-translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
     }
 
-    // Face ID Kaydı
-    async function registerUser(userKey) {
+    function bufferToBase64(buffer) {
+      return btoa(String.fromCharCode(...new Uint8Array(buffer)));
+    }
+
+    async function registerEnesDevice() {
       if (!window.PublicKeyCredential) {
-        showToast("Cihazınız Face ID desteklemiyor.", "error");
+        showToast("Cihazınız WebAuthn/Face ID desteklemiyor.", "error");
         return;
       }
       try {
@@ -105,9 +113,9 @@
             challenge,
             rp: { name: "WakeUp OS" },
             user: {
-              id: Uint8Array.from(userKey.toUpperCase(), c => c.charCodeAt(0)),
-              name: userKey,
-              displayName: userKey
+              id: Uint8Array.from("ENES_MASTER", c => c.charCodeAt(0)),
+              name: "enes",
+              displayName: "Enes"
             },
             pubKeyCredParams: [{ alg: -7, type: "public-key" }],
             authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
@@ -116,18 +124,29 @@
         });
 
         if (credential) {
-          localStorage.setItem(`${userKey}_auth_id`, credential.id);
-          showToast(`${userKey.toUpperCase()} Face ID başarıyla eşlendi!`);
-          checkLocalBio();
+          const rawIdBase64 = bufferToBase64(credential.rawId);
+          const { error } = await supabaseClient.from('auth_keys').upsert({
+            user_name: 'enes',
+            credential_id: rawIdBase64
+          });
+
+          if (!error) {
+            showToast("Harika! Cihazınız Enes olarak Supabase'e mühürlendi.");
+            checkEnesAuth();
+          } else {
+            showToast("Kayıt hatası: " + error.message, "error");
+          }
         }
       } catch (err) {
-        showToast("Kayıt başarısız: " + err.message, "error");
+        showToast("Eşleme başarısız: " + err.message, "error");
       }
     }
 
-    function checkLocalBio() {
-      if (localStorage.getItem('enes_auth_id')) {
-        document.getElementById('enesBioLabel').innerText = "Enes Face ID Tanımlı ✓";
+    async function checkEnesAuth() {
+      const { data } = await supabaseClient.from('auth_keys').select('credential_id').eq('user_name', 'enes').single();
+      if (data) {
+        document.getElementById('enesBioLabel').innerText = "Enes Cihazı Tanımlı ✓";
+        document.getElementById('btnEnesRegister').classList.add('opacity-70', 'cursor-default');
       }
     }
 
@@ -147,7 +166,6 @@
           badge.innerText = "Kapalı";
         }
 
-        // Alarm çalıyorsa uyarı banner'ını aç
         if (data.is_ringing) {
           document.getElementById('ringingBanner').classList.remove('hidden');
         } else {
@@ -168,7 +186,7 @@
 
     async function saveAlarmTime() {
       const timeVal = document.getElementById('timePicker').value;
-      if (!timeVal) return showToast("Saat seçiniz.", "error");
+      if (!timeVal) return showToast("Geçerli bir saat seçiniz.", "error");
 
       const [h, m] = timeVal.split(':').map(n => parseInt(n, 10));
       const { error } = await supabaseClient.from('alarm_state').update({
@@ -178,7 +196,7 @@
       }).eq('id', 1);
 
       if (!error) {
-        showToast(`Alarm ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} olarak kuruldu!`);
+        showToast(`Alarm ${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')} olarak güncellendi!`);
         loadState();
       } else {
         showToast("Hata: " + error.message, "error");
@@ -186,7 +204,7 @@
     }
 
     window.addEventListener('DOMContentLoaded', () => {
-      checkLocalBio();
+      checkEnesAuth();
       loadState();
       setInterval(loadState, 10000);
     });
