@@ -3,31 +3,30 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>WakeUp OS | Salon Doğrulama</title>
+  <title>WakeUp OS | Salon Doğrulama Noktası</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body class="bg-[#0b0f19] text-gray-100 min-h-screen flex items-center justify-center p-4 relative">
+<body class="bg-[#0b0f19] text-gray-100 min-h-screen flex items-center justify-center p-4 relative overflow-x-hidden">
 
-  <!-- Toast Container -->
   <div id="toastContainer" class="fixed top-5 left-1/2 -translate-x-1/2 z-50 flex flex-col space-y-2 pointer-events-none w-full max-w-xs px-4"></div>
 
-  <!-- 1. Yetkisiz Giriş Ekranı (Token Yanlışsa veya Boşsa) -->
+  <!-- 1. 403 Erişim Engellendi (Token Yanlış veya Boşsa) -->
   <div id="forbiddenScreen" class="hidden w-full max-w-sm bg-[#161f30] border border-red-900/50 rounded-3xl p-8 text-center space-y-4 shadow-2xl">
     <div class="text-4xl">⛔</div>
-    <h2 class="text-lg font-bold text-red-400">403 - Erişim Engellendi</h2>
-    <p class="text-xs text-gray-400">Bu sayfaya doğrudan URL ile erişilemez. Lütfen salondaki fiziksel NFC etiketini telefonunuza okutun.</p>
+    <h2 class="text-lg font-bold text-red-400">403 - Yetkisiz Erişim</h2>
+    <p class="text-xs text-gray-400">Bu sayfaya tarayıcıdan doğrudan girilemez. Lütfen salondaki fiziksel NFC çipine telefonunuzu dokundurun.</p>
   </div>
 
-  <!-- 2. Token Geçerli -> Susturma Ekranı -->
+  <!-- 2. Token Doğru -> Susturma Ekranı -->
   <div id="authScreen" class="w-full max-w-sm bg-[#161f30] border border-gray-800 rounded-3xl p-8 text-center space-y-6 shadow-2xl">
     <div class="w-20 h-20 bg-rose-950/40 border border-rose-800/40 rounded-full flex items-center justify-center mx-auto text-3xl">
       📍
     </div>
     <div>
       <h2 class="text-lg font-bold text-white">Salon Doğrulama Noktası</h2>
-      <p class="text-xs text-gray-400 mt-1">Yataktan çıktığınız doğrulandı. Alarmı susturmak için Face ID taraması yapın.</p>
+      <p class="text-xs text-gray-400 mt-1">Yataktan çıktığınız teyit edildi. Alarmı susturmak için Face ID okutun.</p>
     </div>
 
     <button id="btnStop" onclick="verifyAndStop()" class="w-full py-4 bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 font-bold rounded-2xl text-white shadow-xl shadow-red-950/60 flex items-center justify-center space-x-2 transition active:scale-95 text-sm">
@@ -37,7 +36,7 @@
   </div>
 
   <script>
-    const SECRET_TOKEN = "salontoken123"; // NFC'ye yazacağın hash (#salontoken123)
+    const SECRET_TOKEN = "salontoken123";
     const SUPABASE_URL = "https://yygdawhsdhffrzssxogn.supabase.co";
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Z2Rhd2hzZGhmZnJ6c3N4b2duIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1NDc3NjgsImV4cCI6MjEwOTEyMzc2OH0.cBWYfR_6BzxoI5Vo8kH45vpo-YPu3yRxRIlwv_wsvgA";
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
@@ -47,13 +46,20 @@
       const toast = document.createElement('div');
       const isSuccess = type === 'success';
       const bg = isSuccess ? 'bg-emerald-950/90 border-emerald-500/50 text-emerald-200' : 'bg-rose-950/90 border-rose-500/50 text-rose-200';
-      toast.className = `flex items-center space-x-3 px-4 py-3 rounded-2xl border backdrop-blur-md shadow-xl text-xs font-medium ${bg}`;
+      toast.className = `flex items-center space-x-3 px-4 py-3 rounded-2xl border backdrop-blur-md shadow-xl text-xs font-medium transition-all duration-300 transform -translate-y-4 opacity-0 pointer-events-auto ${bg}`;
       toast.innerHTML = `<span>${isSuccess ? '✓' : '✕'}</span><span>${message}</span>`;
       container.appendChild(toast);
-      setTimeout(() => toast.remove(), 3500);
+      requestAnimationFrame(() => toast.classList.remove('-translate-y-4', 'opacity-0'));
+      setTimeout(() => {
+        toast.classList.add('opacity-0', '-translate-y-2');
+        setTimeout(() => toast.remove(), 3500);
+      }, 3500);
     }
 
-    // Token Kontrolü (URL Hash Kontrolü)
+    function base64ToBuffer(base64) {
+      return Uint8Array.from(atob(base64), c => c.charCodeAt(0)).buffer;
+    }
+
     function validateToken() {
       const hash = window.location.hash.replace('#', '');
       if (hash !== SECRET_TOKEN) {
@@ -67,9 +73,11 @@
     async function verifyAndStop() {
       if (!validateToken()) return;
 
-      const userCredId = localStorage.getItem('enes_auth_id');
-      if (!userCredId) {
-        showToast("Bu cihazda kayıtlı Face ID bulunamadı. Lütfen ana sayfadan eşleyin.", "error");
+      // Supabase'den Enes'in kayıtlı açık anahtarını çek
+      const { data, error } = await supabaseClient.from('auth_keys').select('credential_id').eq('user_name', 'enes').single();
+
+      if (error || !data) {
+        showToast("Sistemde kayıtlı Enes cihazı bulunamadı. Lütfen ana sayfadan eşleyin.", "error");
         return;
       }
 
@@ -77,34 +85,43 @@
         const challenge = new Uint8Array(32);
         window.crypto.getRandomValues(challenge);
 
+        // Sadece Enes'in donanım çipini kabul eder
         const assertion = await navigator.credentials.get({
-          publicKey: { challenge, userVerification: "required", timeout: 60000 }
+          publicKey: {
+            challenge,
+            allowCredentials: [{
+              id: base64ToBuffer(data.credential_id),
+              type: 'public-key'
+            }],
+            userVerification: "required",
+            timeout: 60000
+          }
         });
 
         if (assertion) {
-          // Yüz başarıyla doğrulandı -> Alarmı kapat
-          const { error } = await supabaseClient.from('alarm_state').update({
+          const { error: updateError } = await supabaseClient.from('alarm_state').update({
             alarm_enabled: false,
             is_ringing: false
           }).eq('id', 1);
 
-          if (!error) {
+          if (!updateError) {
             showToast("Face ID Doğrulandı! Alarm Susturuldu.");
-            document.getElementById('btnStop').disabled = true;
-            document.getElementById('btnStop').innerText = "✓ Alarm Başarıyla Kapatıldı";
-            document.getElementById('btnStop').className = "w-full py-4 bg-emerald-600/80 font-bold rounded-2xl text-white text-sm cursor-default";
+            const btn = document.getElementById('btnStop');
+            btn.disabled = true;
+            btn.innerText = "✓ Alarm Başarıyla Kapatıldı";
+            btn.className = "w-full py-4 bg-emerald-600/80 font-bold rounded-2xl text-white text-sm cursor-default";
           } else {
-            showToast("Supabase hatası: " + error.message, "error");
+            showToast("Hata: " + updateError.message, "error");
           }
         }
       } catch (err) {
-        showToast("Face ID doğrulanmadı! Alarm kapatılamaz.", "error");
+        showToast("Doğrulama Başarısız: Bu Enes'in kayıtlı telefonu değil!", "error");
       }
     }
 
     window.addEventListener('DOMContentLoaded', () => {
       if (validateToken()) {
-        // NFC okutulduğu an kullanıcıyı bekletmeden otomatik Face ID başlatır
+        // NFC okutulur okutulmaz Face ID penceresini açar
         setTimeout(verifyAndStop, 400);
       }
     });
