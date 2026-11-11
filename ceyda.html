@@ -50,29 +50,37 @@
       </div>
       
       <div class="flex items-center space-x-2 bg-gray-900/60 px-3 py-1.5 rounded-full border border-gray-700">
-        <span id="chargeIcon" class="hidden text-amber-400 text-xs font-bold">⚡</span>
-        <span id="batteryText" class="text-xs font-semibold text-emerald-400">--%</span>
-        <div class="w-6 h-3 border border-gray-400 rounded-sm p-0.5 flex items-center">
-          <div id="batteryBar" class="h-full bg-emerald-400 rounded-2xs" style="width: 50%;"></div>
+        <span class="w-2 h-2 rounded-full bg-emerald-400"></span>
+        <span class="text-xs font-semibold text-emerald-400">🔌 5V Priz Aktif</span>
+      </div>
+    </div>
+
+    <!-- Canlı Çalma Durumu Göstergesi -->
+    <div id="liveRingingStatus" class="hidden bg-amber-950/50 border border-amber-500/50 rounded-2xl p-3.5 flex items-center justify-between">
+      <div class="flex items-center space-x-2.5">
+        <span class="text-lg animate-bounce">🚨</span>
+        <div>
+          <p class="text-xs font-bold text-amber-300">Komodin Şu An Çalıyor!</p>
+          <p class="text-[11px] text-amber-200/80">Flaşör ve Buzzer aktif. Enes henüz NFC okutmadı.</p>
         </div>
       </div>
     </div>
 
-    <!-- Dürtme Butonu -->
+    <!-- Sonsuz Kaotik Dürtme Butonu -->
     <div class="bg-gradient-to-r from-rose-950/40 to-pink-950/30 border border-rose-900/40 rounded-2xl p-5 text-center space-y-3">
-      <div class="text-left">
-        <h3 class="text-sm font-bold text-rose-300">💥 Enes'i Dürt (Anlık Titret)</h3>
-        <p class="text-xs text-rose-400/80">Göğsüne anında 3 saniyelik sert titreşim ve çakar darbesi vurur.</p>
+      <div class="text-left space-y-1">
+        <h3 class="text-sm font-bold text-rose-300">💥 Enes'i Uyandır (Sonsuz Kaos Dürtmesi)</h3>
+        <p class="text-xs text-rose-300/80">3W Flaşör ve Buzzer'ı rastgele ritimle başlatır. Enes kalkıp NFC okutana kadar <b>asla durmaz</b>.</p>
       </div>
       <button onclick="triggerNudge()" class="w-full py-4 bg-rose-600 hover:bg-rose-500 active:scale-[0.98] transition font-extrabold rounded-xl text-white shadow-lg shadow-rose-900/50 text-base">
-        ŞİMDİ DÜRT (UYANDIR)
+        ŞİMDİ UYANDIR (SONSUZ ÇAL)
       </button>
     </div>
 
     <!-- Alarm Saati Ayarı -->
     <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-5 space-y-4">
       <div class="flex justify-between items-center">
-        <span class="text-sm font-medium text-gray-300">Alarm Durumu</span>
+        <span class="text-sm font-medium text-gray-300">Sabah Alarmı</span>
         <label class="relative inline-flex items-center cursor-pointer">
           <input type="checkbox" id="alarmToggle" class="sr-only peer">
           <div class="w-11 h-6 bg-gray-700 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
@@ -88,11 +96,12 @@
       </button>
     </div>
 
-    <!-- Acil Alarm Susturma -->
-    <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-4 text-center">
+    <!-- Uzaktan Acil Susturma -->
+    <div class="bg-gray-900/40 border border-gray-800 rounded-2xl p-4 text-center space-y-2">
       <button type="button" onclick="stopAlarmSystem()" class="w-full py-3 bg-red-600/80 hover:bg-red-600 active:scale-[0.98] font-bold rounded-xl text-xs uppercase tracking-wider text-white transition">
-        🛑 Çalan Alarmı Kapat / Sustur
+        🛑 Çalan Alarmı / Dürtmeyi Uzaktan Sustur
       </button>
+      <p class="text-[11px] text-gray-500">Enes'i affetmeye karar verirsen buradan susturabilirsin.</p>
     </div>
 
   </div>
@@ -101,6 +110,8 @@
     const SUPABASE_URL = "https://yygdawhsdhffrzssxogn.supabase.co";
     const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl5Z2Rhd2hzZGhmZnJ6c3N4b2duIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTM1NDc3NjgsImV4cCI6MjEwOTEyMzc2OH0.cBWYfR_6BzxoI5Vo8kH45vpo-YPu3yRxRIlwv_wsvgA";
     const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let isInitialLoadDone = false;
 
     function showToast(message, type = 'success') {
       const container = document.getElementById('toastContainer');
@@ -194,7 +205,7 @@
           document.getElementById('mainPanel').classList.remove('hidden');
           showToast("Hoş geldin Ceyda! Root paneli açıldı.");
           loadState();
-          setInterval(loadState, 15000);
+          setInterval(loadState, 4000);
         }
       } catch (err) {
         showToast("Yetkisiz Giriş: Bu cihaz Ceyda'nın iPhone'u değil!", "error");
@@ -206,24 +217,37 @@
       if (data) {
         const h = String(data.alarm_hour).padStart(2, '0');
         const m = String(data.alarm_minute).padStart(2, '0');
-        document.getElementById('timePicker').value = `${h}:${m}`;
+        
+        const timeInput = document.getElementById('timePicker');
+        if (!isInitialLoadDone || document.activeElement !== timeInput) {
+          timeInput.value = `${h}:${m}`;
+          isInitialLoadDone = true;
+        }
+        
         document.getElementById('alarmToggle').checked = data.alarm_enabled;
-        
-        const batt = data.battery_level ?? 100;
-        document.getElementById('batteryText').innerText = `%${batt}`;
-        document.getElementById('batteryBar').style.width = `${batt}%`;
-        
-        if (data.is_charging) {
-          document.getElementById('chargeIcon').classList.remove('hidden');
+
+        // Komodindeki cihaz şu an aktif çalıyorsa canlı uyarı göster
+        const liveBanner = document.getElementById('liveRingingStatus');
+        if (data.is_ringing || data.vibrate_now) {
+          liveBanner.classList.remove('hidden');
         } else {
-          document.getElementById('chargeIcon').classList.add('hidden');
+          liveBanner.classList.add('hidden');
         }
       }
     }
 
     async function triggerNudge() {
-      const { error } = await supabaseClient.from('alarm_state').update({ vibrate_now: true }).eq('id', 1);
-      if (!error) showToast("Titreşim gönderildi! Enes titriyor.");
+      const { error } = await supabaseClient.from('alarm_state').update({ 
+        vibrate_now: true,
+        is_ringing: true 
+      }).eq('id', 1);
+      
+      if (!error) {
+        showToast("Kaotik uyandırma gönderildi! Enes NFC okutana kadar durmayacak.");
+        loadState();
+      } else {
+        showToast("Hata: " + error.message, "error");
+      }
     }
 
     async function saveAlarmSettings() {
@@ -239,12 +263,16 @@
         alarm_enabled: enabled
       }).eq('id', 1);
       showToast("Alarm güncellendi!");
+      loadState();
     }
 
     async function stopAlarmSystem() {
-      await supabaseClient.from('alarm_state').update({ alarm_enabled: false, is_ringing: false }).eq('id', 1);
-      document.getElementById('alarmToggle').checked = false;
-      showToast("Alarm kapatıldı.");
+      await supabaseClient.from('alarm_state').update({ 
+        vibrate_now: false,
+        is_ringing: false 
+      }).eq('id', 1);
+      showToast("Komodin susturuldu!");
+      loadState();
     }
 
     window.addEventListener('DOMContentLoaded', async () => {
