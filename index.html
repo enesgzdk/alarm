@@ -19,27 +19,24 @@
 
   <div class="w-full max-w-md bg-[#161f30] border border-gray-800 rounded-3xl p-6 shadow-2xl space-y-6">
     
-    <!-- Başlık & Batarya -->
+    <!-- Başlık & Sistem Güç Durumu -->
     <div class="flex justify-between items-center pb-4 border-b border-gray-800">
       <div>
         <h1 class="text-lg font-bold text-white">WakeUp System</h1>
-        <p class="text-xs text-gray-400">Enes Kullanıcı Paneli</p>
+        <p class="text-xs text-gray-400">Enes Komodin İstasyonu</p>
       </div>
       
       <div class="flex items-center space-x-2 bg-gray-900/60 px-3 py-1.5 rounded-full border border-gray-700">
-        <span id="chargeIcon" class="hidden text-amber-400 text-xs font-bold">⚡</span>
-        <span id="batteryText" class="text-xs font-semibold text-emerald-400">--%</span>
-        <div class="w-6 h-3 border border-gray-400 rounded-sm p-0.5 flex items-center">
-          <div id="batteryBar" class="h-full bg-emerald-400 rounded-2xs" style="width: 50%;"></div>
-        </div>
+        <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+        <span class="text-xs font-semibold text-emerald-400">🔌 5V Priz Aktif</span>
       </div>
     </div>
 
-    <!-- Alarm Çalma Durumu Uyarısı -->
-    <div id="ringingBanner" class="hidden bg-rose-950/60 border border-rose-600/60 rounded-2xl p-4 text-center space-y-2 animate-pulse">
-      <div class="text-2xl">🚨</div>
-      <h3 class="text-sm font-bold text-rose-300">ALARM ÇALIYOR!</h3>
-      <p class="text-xs text-rose-200">Susturmak için salondaki NFC noktasına gidip Face ID okutmanız gerekiyor.</p>
+    <!-- Alarm / Dürtme Çalma Durumu Uyarısı -->
+    <div id="ringingBanner" class="hidden bg-rose-950/70 border border-rose-500/70 rounded-2xl p-4 text-center space-y-2 animate-pulse">
+      <div class="text-2xl">🚨⚡</div>
+      <h3 class="text-sm font-bold text-rose-300">KAOTİK UYANDIRMA AKTİF!</h3>
+      <p class="text-xs text-rose-200">3W Flaşör ve Buzzer durdurulana kadar devrede. Susturmak için NFC etiketini okutup Face ID doğrulaması yapmalısın.</p>
     </div>
 
     <!-- Alarm Saati Kurulumu -->
@@ -55,7 +52,7 @@
 
       <!-- Kalan Süre / Kilit Durumu Notu -->
       <p id="lockWarningText" class="text-center text-xs text-amber-400/90 font-medium hidden">
-        ⚠️ Alarma 10 dakikadan az kaldığı için değişiklik kilitlendi.
+        ⚠️ Alarma 10 dakikadan az kaldığı veya alarm çaldığı için değişiklik kilitlendi.
       </p>
 
       <button id="btnSaveAlarm" type="button" onclick="saveAlarmTime()" class="w-full py-3.5 bg-indigo-600 hover:bg-indigo-500 active:scale-[0.98] transition font-semibold rounded-xl text-sm shadow-md shadow-indigo-950/40 disabled:opacity-50 disabled:bg-gray-700 disabled:cursor-not-allowed disabled:pointer-events-none">
@@ -65,7 +62,7 @@
 
     <!-- Biyometrik Cihaz Tanımlama -->
     <div class="bg-gray-900/30 border border-gray-800/80 rounded-2xl p-4 space-y-3">
-      <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider">Cihaz Doğrulama Durumu</h4>
+      <h4 class="text-xs font-bold text-gray-400 uppercase tracking-wider">NFC & Cihaz Doğrulama Durumu</h4>
       
       <div class="space-y-2">
         <button id="btnEnesRegister" type="button" onclick="registerEnesDevice()" class="w-full py-2.5 bg-gray-800 hover:bg-gray-700 font-semibold rounded-xl text-xs text-gray-200 flex items-center justify-center space-x-2 transition">
@@ -89,6 +86,8 @@
     let activeAlarmHour = null;
     let activeAlarmMinute = null;
     let isAlarmActive = false;
+    let isCurrentlyRinging = false;
+    let isInitialLoadDone = false;
 
     function showToast(message, type = 'success') {
       const container = document.getElementById('toastContainer');
@@ -101,7 +100,7 @@
       requestAnimationFrame(() => toast.classList.remove('-translate-y-4', 'opacity-0'));
       setTimeout(() => {
         toast.classList.add('opacity-0', '-translate-y-2');
-        setTimeout(() => toast.remove(), 3000);
+        setTimeout(() => toast.remove(), 300);
       }, 3000);
     }
 
@@ -109,29 +108,41 @@
       return btoa(String.fromCharCode(...new Uint8Array(buffer)));
     }
 
-    // Alarma kalan dakikayı hesaplar (0 - 1440 dk arası)
     function getMinutesUntilAlarm(targetHour, targetMinute) {
       const now = new Date();
       const currentMinutes = now.getHours() * 60 + now.getMinutes();
       let targetMinutes = targetHour * 60 + targetMinute;
 
-      // Eğer alarm saati bugünkü saatten küçükse yarın sabah çalacaktır
       if (targetMinutes < currentMinutes) {
         targetMinutes += 24 * 60;
       }
       return targetMinutes - currentMinutes;
     }
 
-    // 10 dakika kontrolü ve UI kilitleme
     function evaluateLockState() {
-      if (activeAlarmHour === null || !isAlarmActive) return;
-
-      const minutesLeft = getMinutesUntilAlarm(activeAlarmHour, activeAlarmMinute);
       const timeInput = document.getElementById('timePicker');
       const saveBtn = document.getElementById('btnSaveAlarm');
       const lockWarning = document.getElementById('lockWarningText');
 
-      // Alarm aktif ve çalmasına 10 dakika veya daha az kalmışsa (veya tam o an çalıyorsa)
+      // Cihaz şu an çalıyorsa (Alarm veya Sonsuz Dürtme) saati değiştirmeyi kilitle
+      if (isCurrentlyRinging) {
+        timeInput.disabled = true;
+        saveBtn.disabled = true;
+        saveBtn.innerText = "🚨 Şu An Çalıyor (Önce NFC Okutun)";
+        lockWarning.classList.remove('hidden');
+        return;
+      }
+
+      if (activeAlarmHour === null || !isAlarmActive) {
+        timeInput.disabled = false;
+        saveBtn.disabled = false;
+        saveBtn.innerText = "Alarm Saatini Kur / Güncelle";
+        lockWarning.classList.add('hidden');
+        return;
+      }
+
+      const minutesLeft = getMinutesUntilAlarm(activeAlarmHour, activeAlarmMinute);
+
       if (minutesLeft <= 10 && minutesLeft >= 0) {
         timeInput.disabled = true;
         saveBtn.disabled = true;
@@ -202,14 +213,16 @@
         activeAlarmHour = data.alarm_hour;
         activeAlarmMinute = data.alarm_minute;
         isAlarmActive = data.alarm_enabled;
+        isCurrentlyRinging = data.is_ringing;
 
         const h = String(activeAlarmHour).padStart(2, '0');
         const m = String(activeAlarmMinute).padStart(2, '0');
         
-        // Eğer input kilitli değilse veritabanındaki saati yansıt
         const timeInput = document.getElementById('timePicker');
-        if (!timeInput.disabled) {
+        // İlk yüklemede veya kullanıcı o an saati düzenlemiyorsa veritabanı saatini yaz
+        if (!isInitialLoadDone || document.activeElement !== timeInput) {
           timeInput.value = `${h}:${m}`;
+          isInitialLoadDone = true;
         }
         
         const badge = document.getElementById('alarmStatusBadge');
@@ -221,20 +234,10 @@
           badge.innerText = "Kapalı";
         }
 
-        if (data.is_ringing) {
+        if (isCurrentlyRinging) {
           document.getElementById('ringingBanner').classList.remove('hidden');
         } else {
           document.getElementById('ringingBanner').classList.add('hidden');
-        }
-
-        const batt = data.battery_level ?? 100;
-        document.getElementById('batteryText').innerText = `%${batt}`;
-        document.getElementById('batteryBar').style.width = `${batt}%`;
-        
-        if (data.is_charging) {
-          document.getElementById('chargeIcon').classList.remove('hidden');
-        } else {
-          document.getElementById('chargeIcon').classList.add('hidden');
         }
 
         evaluateLockState();
@@ -242,7 +245,11 @@
     }
 
     async function saveAlarmTime() {
-      // Çift Güvenlik Kontrolü: 10 dakika altındaysa isteği direkt kes
+      if (isCurrentlyRinging) {
+        showToast("Sistem çalarken saat değiştirilemez!", "error");
+        return;
+      }
+
       if (isAlarmActive && activeAlarmHour !== null) {
         const remaining = getMinutesUntilAlarm(activeAlarmHour, activeAlarmMinute);
         if (remaining <= 10 && remaining >= 0) {
@@ -273,8 +280,8 @@
     window.addEventListener('DOMContentLoaded', () => {
       checkEnesAuth();
       loadState();
-      setInterval(loadState, 10000);
-      setInterval(evaluateLockState, 5000); // Kilit durumunu yerel olarak 5 saniyede bir kontrol et
+      setInterval(loadState, 4000);
+      setInterval(evaluateLockState, 3000);
     });
   </script>
 </body>
